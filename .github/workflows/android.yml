@@ -19,6 +19,9 @@ jobs:
         with:
           targets: aarch64-linux-android
 
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk
+
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -27,9 +30,9 @@ jobs:
       - name: Setup Android NDK
         uses: nttld/setup-ndk@v1
         with:
-          ndk-version: r26d
+          ndk-version: r26d   # or r27 if you prefer
 
-      - name: Build OpenSSL for Android aarch64
+      - name: Build OpenSSL for Android (static)
         run: |
           OPENSSL_VERSION=1.1.1w
           INSTALL_DIR=$(pwd)/openssl-android
@@ -38,52 +41,29 @@ jobs:
           tar -xzf openssl-${OPENSSL_VERSION}.tar.gz
           cd openssl-${OPENSSL_VERSION}
 
-          # Patch for Android visibility issues
           sed -i 's/\.hidden OPENSSL_armcap_P/.globl OPENSSL_armcap_P/' crypto/*arm*pl crypto/*/asm/*arm*pl 2>/dev/null || true
 
           export ANDROID_NDK_ROOT=$ANDROID_NDK_HOME
           export PATH=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH
 
-          # Stronger configuration for 64-bit only
-          ./Configure android-arm64 \
-            no-shared no-tests no-asm \
-            -D__ANDROID_API__=21 \
-            --prefix=$INSTALL_DIR
+          ./Configure android-arm64 no-shared no-tests no-asm -D__ANDROID_API__=21 --prefix=$INSTALL_DIR
 
           make -j$(nproc)
           make install_sw
 
-          # Export everything picoquic + openssl-sys expect
           echo "OPENSSL_ROOT_DIR=$INSTALL_DIR" >> $GITHUB_ENV
           echo "OPENSSL_DIR=$INSTALL_DIR" >> $GITHUB_ENV
           echo "OPENSSL_INCLUDE_DIR=$INSTALL_DIR/include" >> $GITHUB_ENV
           echo "OPENSSL_CRYPTO_LIBRARY=$INSTALL_DIR/lib/libcrypto.a" >> $GITHUB_ENV
           echo "OPENSSL_SSL_LIBRARY=$INSTALL_DIR/lib/libssl.a" >> $GITHUB_ENV
           echo "OPENSSL_USE_STATIC_LIBS=1" >> $GITHUB_ENV
-          echo "AARCH64_LINUX_ANDROID_OPENSSL_DIR=$INSTALL_DIR" >> $GITHUB_ENV
 
-          # Force static linking
-          echo "CMAKE_FIND_LIBRARY_SUFFIXES=.a" >> $GITHUB_ENV
-
-      - name: Configure linker and environment for aarch64
+      - name: Build with cargo-ndk
         run: |
-          NDK_BIN=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin
-          echo "CC_aarch64_linux_android=$NDK_BIN/aarch64-linux-android21-clang" >> $GITHUB_ENV
-          echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$NDK_BIN/aarch64-linux-android21-clang" >> $GITHUB_ENV
-          echo "AR_aarch64_linux_android=$NDK_BIN/llvm-ar" >> $GITHUB_ENV
-          echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
-          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
-          echo "ANDROID_ABI=arm64-v8a" >> $GITHUB_ENV
-          echo "ANDROID_PLATFORM=21" >> $GITHUB_ENV
-
-      - name: Build picoquic (auto via script)
-        run: |
-          export PICOQUIC_AUTO_BUILD=1
-
-      - name: Build binaries
-        run: |
-          cargo build --release \
+          cargo ndk \
             --target aarch64-linux-android \
+            --platform 21 \
+            build --release \
             -p slipstream-client \
             -p slipstream-server
 
