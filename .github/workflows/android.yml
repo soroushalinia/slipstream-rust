@@ -22,13 +22,14 @@ jobs:
       - name: Install cargo-ndk
         run: cargo install cargo-ndk
 
-      - name: Install build dependencies
+      - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake pkg-config libssl-dev clang perl make gcc
 
       - name: Setup Android NDK
         uses: nttld/setup-ndk@v1
+        id: setup-ndk
         with:
           ndk-version: r26d
 
@@ -41,11 +42,10 @@ jobs:
           tar -xzf openssl-${OPENSSL_VERSION}.tar.gz
           cd openssl-${OPENSSL_VERSION}
 
-          # Patch for Android
           sed -i 's/\.hidden OPENSSL_armcap_P/.globl OPENSSL_armcap_P/' crypto/*arm*pl crypto/*/asm/*arm*pl 2>/dev/null || true
 
-          export ANDROID_NDK_ROOT=$ANDROID_NDK_HOME
-          export PATH=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH
+          export ANDROID_NDK_ROOT=${{ steps.setup-ndk.outputs.ndk-path }}
+          export PATH=$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH
 
           ./Configure android-arm64 no-shared no-tests no-asm -D__ANDROID_API__=21 --prefix=$INSTALL_DIR
 
@@ -59,14 +59,13 @@ jobs:
           echo "OPENSSL_SSL_LIBRARY=$INSTALL_DIR/lib/libssl.a" >> $GITHUB_ENV
           echo "OPENSSL_USE_STATIC_LIBS=1" >> $GITHUB_ENV
 
-      - name: Build with cargo-ndk (force correct toolchain for CMake)
+      - name: Build with cargo-ndk
         env:
-          CMAKE_TOOLCHAIN_FILE: ${{ env.ANDROID_NDK_HOME }}/build/cmake/android.toolchain.cmake
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
+          CMAKE_TOOLCHAIN_FILE: ${{ steps.setup-ndk.outputs.ndk-path }}/build/cmake/android.toolchain.cmake
           ANDROID_ABI: arm64-v8a
-          ANDROID_PLATFORM: android-21
-          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
-          CC: ${{ env.ANDROID_NDK_HOME }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang
-          AR: ${{ env.ANDROID_NDK_HOME }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar
+          ANDROID_PLATFORM: 21
         run: |
           cargo ndk \
             --target aarch64-linux-android \
