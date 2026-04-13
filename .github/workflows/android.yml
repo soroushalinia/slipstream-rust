@@ -31,39 +31,36 @@ jobs:
 
       - name: Build OpenSSL for Android (aarch64)
         run: |
-          OPENSSL_VERSION=3.3.2
+          OPENSSL_VERSION=1.1.1w
           INSTALL_DIR=$(pwd)/openssl-android
 
           wget -q https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz
           tar -xzf openssl-${OPENSSL_VERSION}.tar.gz
           cd openssl-${OPENSSL_VERSION}
 
-          # Fix for Android assembly visibility issue
+          # Critical patch for Android (fixes .hidden symbol issues)
           sed -i 's/\.hidden OPENSSL_armcap_P/.globl OPENSSL_armcap_P/' crypto/*arm*pl crypto/*/asm/*arm*pl 2>/dev/null || true
 
           export ANDROID_NDK_ROOT=$ANDROID_NDK_HOME
           export PATH=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH
 
+          # Simpler and more reliable configuration for 64-bit Android
           ./Configure android-arm64 \
             no-shared no-tests \
             -D__ANDROID_API__=21 \
-            --prefix=$INSTALL_DIR \
-            --cross-compile-prefix=aarch64-linux-android21-
+            --prefix=$INSTALL_DIR
 
           make -j$(nproc)
           make install_sw
 
-          # Export all variables needed by openssl-sys AND slipstream-ffi / picoquic CMake
+          # Export variables for both openssl-sys and slipstream-ffi / picoquic
           echo "OPENSSL_ROOT_DIR=$INSTALL_DIR" >> $GITHUB_ENV
           echo "OPENSSL_DIR=$INSTALL_DIR" >> $GITHUB_ENV
           echo "OPENSSL_INCLUDE_DIR=$INSTALL_DIR/include" >> $GITHUB_ENV
-          echo "AARCH64_LINUX_ANDROID_OPENSSL_DIR=$INSTALL_DIR" >> $GITHUB_ENV
-          echo "AARCH64_LINUX_ANDROID_OPENSSL_INCLUDE_DIR=$INSTALL_DIR/include" >> $GITHUB_ENV
-
-          # Also help CMake find the libraries explicitly
           echo "OPENSSL_CRYPTO_LIBRARY=$INSTALL_DIR/lib/libcrypto.a" >> $GITHUB_ENV
           echo "OPENSSL_SSL_LIBRARY=$INSTALL_DIR/lib/libssl.a" >> $GITHUB_ENV
           echo "OPENSSL_USE_STATIC_LIBS=1" >> $GITHUB_ENV
+          echo "AARCH64_LINUX_ANDROID_OPENSSL_DIR=$INSTALL_DIR" >> $GITHUB_ENV
 
       - name: Configure Android linker + environment
         run: |
